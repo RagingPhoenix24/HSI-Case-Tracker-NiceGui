@@ -1,6 +1,6 @@
 from nicegui import ui
-from datetime import date
-import json
+from datetime import date, datetime
+from config import PRIMARY_COLOR
 
 def render_invoice_preview(case_row: dict, billing: dict, case_details: dict):
     html = f"""
@@ -27,10 +27,10 @@ def render_invoice_preview(case_row: dict, billing: dict, case_details: dict):
         </div>
         <hr style="border: 1px solid #ddd; margin: 35px 0 25px 0;">
         <p style="margin-bottom: 28px; line-height: 1.5;">
-            <strong>Case Number:</strong> {case_row.get("Case_Number", case_row["case_id"])}<br>
+            <strong>Case Number:</strong> {case_row.get("Case_Number", case_row.get("case_id", ""))}<br>
             <strong>Client Name:</strong> {case_row.get("Client", "")}
         </p>
-        <!-- Service Fees, Other Expenses, Travel tables exactly as in your original code -->
+
         <h3 style="color: #1a3c6e; margin-bottom: 12px;">Service Fees</h3>
         <table style="width:100%; border-collapse: collapse; margin-bottom: 28px;">
             <thead>
@@ -46,8 +46,44 @@ def render_invoice_preview(case_row: dict, billing: dict, case_details: dict):
                 {''.join([f"<tr><td style='border:1px solid #ddd;padding:12px'>{row.get('Date','')}</td><td style='border:1px solid #ddd;padding:12px'>{row.get('Quantity/Activity','')}</td><td style='border:1px solid #ddd;padding:12px;text-align:right'>{row.get('Hours',0):.2f}</td><td style='border:1px solid #ddd;padding:12px;text-align:right'>${row.get('Rate',0):.2f}</td><td style='border:1px solid #ddd;padding:12px;text-align:right'>${row.get('Amount',0):.2f}</td></tr>" for row in sorted(billing.get("service_fees", []), key=lambda x: x.get('Date',''))])}
             </tbody>
         </table>
-        <!-- (Other tables omitted for brevity in this message but are identical to your original HTML) -->
+        <p style="text-align:right"><strong>Total Service Hours:</strong> {sum(row.get("Hours",0) for row in billing.get("service_fees", [])):.2f} &nbsp;&nbsp; <strong>Fee Subtotal:</strong> ${sum(row.get("Amount",0) for row in billing.get("service_fees", [])):.2f}</p>
+
+        <h3 style="color: #1a3c6e; margin-top: 40px; margin-bottom: 12px;">Other Expenses</h3>
+        <table style="width:100%; border-collapse: collapse; margin-bottom: 28px;">
+            <thead>
+                <tr style="background: #f0f0f0;">
+                    <th style="border: 1px solid #ddd; padding: 12px; text-align: left;">Date</th>
+                    <th style="border: 1px solid #ddd; padding: 12px; text-align: left;">Expense</th>
+                    <th style="border: 1px solid #ddd; padding: 12px; text-align: right;">QTY</th>
+                    <th style="border: 1px solid #ddd; padding: 12px; text-align: right;">Rate</th>
+                    <th style="border: 1px solid #ddd; padding: 12px; text-align: right;">Amount</th>
+                </tr>
+            </thead>
+            <tbody>
+                {''.join([f"<tr><td style='border:1px solid #ddd;padding:12px'>{row.get('Date','')}</td><td style='border:1px solid #ddd;padding:12px'>{row.get('Expense','')}</td><td style='border:1px solid #ddd;padding:12px;text-align:right'>{row.get('QTY',0):.2f}</td><td style='border:1px solid #ddd;padding:12px;text-align:right'>${row.get('Rate',0):.2f}</td><td style='border:1px solid #ddd;padding:12px;text-align:right'>${row.get('Amount',0):.2f}</td></tr>" for row in sorted(billing.get("other_expenses", []), key=lambda x: x.get('Date',''))])}
+            </tbody>
+        </table>
+        <p style="text-align:right"><strong>Other Expense Subtotal:</strong> ${sum(row.get("Amount",0) for row in billing.get("other_expenses", [])):.2f}</p>
+
+        <h3 style="color: #1a3c6e; margin-top: 40px; margin-bottom: 12px;">Travel and Mileage</h3>
+        <table style="width:100%; border-collapse: collapse; margin-bottom: 28px;">
+            <thead>
+                <tr style="background: #f0f0f0;">
+                    <th style="border: 1px solid #ddd; padding: 12px; text-align: left;">Date</th>
+                    <th style="border: 1px solid #ddd; padding: 12px; text-align: left;">Expense</th>
+                    <th style="border: 1px solid #ddd; padding: 12px; text-align: right;">QTY</th>
+                    <th style="border: 1px solid #ddd; padding: 12px; text-align: right;">Rate</th>
+                    <th style="border: 1px solid #ddd; padding: 12px; text-align: right;">Amount</th>
+                </tr>
+            </thead>
+            <tbody>
+                {''.join([f"<tr><td style='border:1px solid #ddd;padding:12px'>{row.get('Date','')}</td><td style='border:1px solid #ddd;padding:12px'>{row.get('Expense','')}</td><td style='border:1px solid #ddd;padding:12px;text-align:right'>{row.get('QTY',0):.2f}</td><td style='border:1px solid #ddd;padding:12px;text-align:right'>${row.get('Rate',0):.3f}</td><td style='border:1px solid #ddd;padding:12px;text-align:right'>${row.get('Amount',0):.2f}</td></tr>" for row in sorted(billing.get("travel_mileage", []), key=lambda x: x.get('Date',''))])}
+            </tbody>
+        </table>
+        <p style="text-align:right"><strong>Travel and Mileage Subtotal:</strong> {sum(row.get("QTY",0) for row in billing.get("travel_mileage", [])):.2f} Miles / ${sum(row.get("Amount",0) for row in billing.get("travel_mileage", [])):.2f}</p>
+
         <h2 style="text-align:right; border-top: 3px solid #1a3c6e; padding-top: 15px; margin-top: 40px;">Invoice Grand Total: ${sum(row.get("Amount",0) for row in billing.get("service_fees", [])) + sum(row.get("Amount",0) for row in billing.get("other_expenses", [])) + sum(row.get("Amount",0) for row in billing.get("travel_mileage", [])):.2f}</h2>
+
         <div style="text-align:center; margin-top: 50px;">
             <button onclick="window.print()" style="background:#1a3c6e; color:white; border:none; padding:15px 40px; font-size:18px; border-radius:8px; cursor:pointer; box-shadow: 0 4px 8px rgba(0,0,0,0.2);">🖨️ Print / Save as PDF</button>
         </div>
