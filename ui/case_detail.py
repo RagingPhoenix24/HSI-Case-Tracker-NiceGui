@@ -1,8 +1,8 @@
 from nicegui import ui
 from database import get_case_details, save_case_details, get_all_cases, save_case
 from ui.components import render_invoice_preview
-from utils.file_handler import save_uploaded_file, delete_file, get_case_folder
-from datetime import datetime, date
+from utils.file_handler import save_uploaded_file, delete_file
+from datetime import date
 import os
 
 def create_default_details(case_id: str) -> dict:
@@ -12,7 +12,7 @@ def create_default_details(case_id: str) -> dict:
         "statements": [],
         "taskings": [],
         "discovery": [],
-        "trial_info": {"case_number": "", "court_dates": []},
+        "trial_info": {"court_dates": []},
         "case_notes": "",
         "billing": {
             "service_fees": [],
@@ -40,20 +40,16 @@ def get_case_row(case_id: str) -> dict:
     }
 
 def sync_case_row_to_details(case_row: dict, details: dict):
-    """Sync main case row data into details client section on load"""
     client = details.setdefault("client", {})
     client["name"] = case_row.get("client") or case_row.get("Client", client.get("name", ""))
-    client["address"] = case_row.get("notes", "") if "notes" in case_row else client.get("address", "")  # reuse notes if needed
-    # You can expand this for more fields later
 
 def sync_details_to_case_row(case_id: str, details: dict):
-    """Sync client name back to main cases table"""
     case_row = get_case_row(case_id)
     client = details.get("client", {})
-    new_client_name = client.get("name", "").strip()
-    if new_client_name:
-        case_row["client"] = new_client_name
-        case_row["Client"] = new_client_name  # support both key styles
+    new_name = client.get("name", "").strip()
+    if new_name:
+        case_row["client"] = new_name
+        case_row["Client"] = new_name
         save_case(case_row)
 
 def show(case_id: str):
@@ -69,7 +65,10 @@ def show(case_id: str):
     with ui.row().classes("w-full items-center justify-between p-4 border-b"):
         ui.button("← Back to All Cases", on_click=lambda: __import__("ui.case_list").show()).props("flat color=primary")
         ui.label(f"Case File: {case_id}").classes("text-3xl font-bold text-[#1a3c6e]")
-        ui.label(f"{case_row.get('client', '') or case_row.get('Client', '')} • {case_row.get('subject_target', '') or case_row.get('Subject_Target', '')} • {case_row.get('status', 'Open') or case_row.get('Status', 'Open')}").classes("text-lg text-gray-600")
+        client_name = case_row.get("client") or case_row.get("Client", "")
+        subject = case_row.get("subject_target") or case_row.get("Subject_Target", "")
+        status = case_row.get("status") or case_row.get("Status", "Open")
+        ui.label(f"{client_name} • {subject} • {status}").classes("text-lg text-gray-600")
 
     # Quick Actions
     with ui.row().classes("gap-4 p-4"):
@@ -77,7 +76,7 @@ def show(case_id: str):
             ui.button("Close Case", on_click=lambda: close_case(case_id, details)).props("color=negative outline")
         ui.button("💾 Save ALL Changes", on_click=lambda: save_all_changes(case_id, details)).props("color=positive")
 
-    # ====================== TASKINGS ======================
+    # Taskings
     ui.label("✅ Taskings").classes("text-2xl font-semibold mt-6 mb-2 px-4")
     taskings = details.setdefault("taskings", [])
 
@@ -91,7 +90,7 @@ def show(case_id: str):
             new_task_input = ui.input("New Task").classes("flex-1")
             ui.button("Add Task", on_click=lambda: add_task(case_id, details, new_task_input)).props("color=primary")
 
-    # ====================== CLIENT INFORMATION ======================
+    # Client Information
     ui.label("👤 Client Information").classes("text-2xl font-semibold mt-8 mb-2 px-4")
     client = details.setdefault("client", {"name": "", "phone": "", "email": "", "address": "", "notes": ""})
 
@@ -106,7 +105,7 @@ def show(case_id: str):
 
     ui.button("Save Client Info", on_click=lambda: save_client_info(case_id, details)).classes("mt-4 ml-4").props("color=primary")
 
-    # ====================== PEOPLE ======================
+    # People
     ui.label("👥 People").classes("text-2xl font-semibold mt-8 mb-2 px-4")
     people = details.setdefault("people", [])
 
@@ -125,13 +124,10 @@ def show(case_id: str):
     with ui.row().classes("px-4 mt-4"):
         ui.button("➕ Add / Edit Person", on_click=lambda: add_person_dialog(case_id, details)).props("color=primary")
 
-    # ====================== TRIAL INFORMATION (conditional) ======================
+    # Trial Information (conditional, without redundant Case Number)
     if (case_row.get("case_type") or case_row.get("Case_Type", "")) in ["Trial Support", "OPDS Trial Support"]:
         ui.label("⚖️ Trial Information").classes("text-2xl font-semibold mt-8 mb-2 px-4")
-        trial = details.setdefault("trial_info", {"case_number": "", "court_dates": []})
-
-        with ui.row().classes("px-4 gap-4"):
-            ui.input("Case Number", value=trial.get("case_number", "")).bind_value(trial, "case_number").classes("w-64")
+        trial = details.setdefault("trial_info", {"court_dates": []})
 
         ui.label("Court Appearances").classes("px-4 mt-4")
         court_dates = trial.setdefault("court_dates", [])
@@ -151,7 +147,7 @@ def show(case_id: str):
             location_input = ui.input("Location / Courtroom")
             ui.button("Add Court Date", on_click=lambda: add_court_date(case_id, details, reason_input, date_input, time_input, location_input)).props("color=primary")
 
-    # ====================== TABS ======================
+    # Tabs
     with ui.tabs().classes("w-full mt-10"):
         tab_discovery = ui.tab("🔗 Discovery")
         tab_notes = ui.tab("📝 Case Notes")
@@ -159,7 +155,7 @@ def show(case_id: str):
         tab_files = ui.tab("📎 Case Files")
 
     with ui.tab_panels().classes("w-full"):
-        # DISCOVERY TAB
+        # Discovery Tab
         with ui.tab_panel(tab_discovery):
             ui.label("Discovery / Dropbox Links").classes("text-xl font-semibold mb-4")
             discovery_links = details.setdefault("discovery", [])
@@ -171,17 +167,17 @@ def show(case_id: str):
                 url_input = ui.input("Dropbox / URL").classes("flex-1")
                 ui.button("Add Link", on_click=lambda: add_discovery_link(case_id, details, title_input, url_input)).props("color=primary")
 
-        # CASE NOTES TAB
+        # Case Notes Tab
         with ui.tab_panel(tab_notes):
             ui.label("📝 Case Notes").classes("text-xl font-semibold mb-4")
             notes_editor = ui.textarea(value=details.get("case_notes", "")).classes("w-full h-96")
             notes_editor.bind_value_to(details, "case_notes")
 
             with ui.row().classes("mt-4 gap-4"):
-                ui.button("💾 Save Notes", on_click=lambda: save_case_details(case_id, details)).props("color=primary")
+                ui.button("💾 Save Notes", on_click=lambda: save_all_changes(case_id, details)).props("color=primary")
                 ui.button("📤 Export as Markdown", on_click=lambda: export_notes(case_id, details)).props("color=secondary")
 
-        # BILLING TAB
+        # Billing Tab
         with ui.tab_panel(tab_billing):
             ui.label("💰 Billing / Invoice").classes("text-xl font-semibold mb-4")
 
@@ -254,11 +250,10 @@ def show(case_id: str):
                 tm_rate = ui.number(value=0.725, min=0, step=0.001, format="%.3f")
                 ui.button("Add Travel/Mileage", on_click=lambda: add_travel_mileage(case_id, details, tm_date, tm_expense, tm_qty, tm_rate)).props("color=primary")
 
-            # Invoice Preview
             ui.label("Invoice Preview").classes("text-lg font-semibold mt-10 mb-4")
             render_invoice_preview(case_row, billing, details)
 
-        # CASE FILES TAB
+        # Case Files Tab
         with ui.tab_panel(tab_files):
             ui.label("📎 Case Files").classes("text-xl font-semibold mb-4")
 
@@ -313,7 +308,7 @@ def show(case_id: str):
 def save_all_changes(case_id: str, details: dict):
     sync_details_to_case_row(case_id, details)
     save_case_details(case_id, details)
-    ui.notify("✅ All changes saved", type="positive")
+    ui.notify("✅ All changes saved successfully", type="positive")
     ui.navigate.to(f"/case/{case_id}")
 
 def save_client_info(case_id: str, details: dict):
