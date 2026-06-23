@@ -90,20 +90,20 @@ def show(case_id: str):
             new_task_input = ui.input("New Task").classes("flex-1")
             ui.button("Add Task", on_click=lambda: add_task(case_id, details, new_task_input)).props("color=primary")
 
-    # Client Information
+    # Client Information - Explicit inputs for reliable save
     ui.label("👤 Client Information").classes("text-2xl font-semibold mt-8 mb-2 px-4")
     client = details.setdefault("client", {"name": "", "phone": "", "email": "", "address": "", "notes": ""})
 
     with ui.grid(columns=2).classes("w-full px-4 gap-4"):
         with ui.card().classes("p-4"):
-            ui.input("Client Name", value=client.get("name", "")).bind_value(client, "name").classes("w-full")
-            ui.input("Phone", value=client.get("phone", "")).bind_value(client, "phone").classes("w-full")
-            ui.input("Email", value=client.get("email", "")).bind_value(client, "email").classes("w-full")
+            name_input = ui.input("Client Name", value=client.get("name", "")).bind_value(client, "name").classes("w-full")
+            phone_input = ui.input("Phone", value=client.get("phone", "")).bind_value(client, "phone").classes("w-full")
+            email_input = ui.input("Email", value=client.get("email", "")).bind_value(client, "email").classes("w-full")
         with ui.card().classes("p-4"):
-            ui.input("Address", value=client.get("address", "")).bind_value(client, "address").classes("w-full")
-            ui.textarea("Client Notes", value=client.get("notes", "")).bind_value(client, "notes").classes("w-full")
+            address_input = ui.input("Address", value=client.get("address", "")).bind_value(client, "address").classes("w-full")
+            notes_input = ui.textarea("Client Notes", value=client.get("notes", "")).bind_value(client, "notes").classes("w-full")
 
-    ui.button("Save Client Info", on_click=lambda: save_client_info(case_id, details)).classes("mt-4 ml-4").props("color=primary")
+    ui.button("Save Client Info", on_click=lambda: save_client_info(case_id, details, name_input, phone_input, email_input, address_input, notes_input)).classes("mt-4 ml-4").props("color=primary")
 
     # People
     ui.label("👥 People").classes("text-2xl font-semibold mt-8 mb-2 px-4")
@@ -124,7 +124,7 @@ def show(case_id: str):
     with ui.row().classes("px-4 mt-4"):
         ui.button("➕ Add / Edit Person", on_click=lambda: add_person_dialog(case_id, details)).props("color=primary")
 
-    # Trial Information (conditional, without redundant Case Number)
+    # Trial Information (no redundant Case Number)
     if (case_row.get("case_type") or case_row.get("Case_Type", "")) in ["Trial Support", "OPDS Trial Support"]:
         ui.label("⚖️ Trial Information").classes("text-2xl font-semibold mt-8 mb-2 px-4")
         trial = details.setdefault("trial_info", {"court_dates": []})
@@ -155,7 +155,7 @@ def show(case_id: str):
         tab_files = ui.tab("📎 Case Files")
 
     with ui.tab_panels().classes("w-full"):
-        # Discovery Tab
+        # Discovery
         with ui.tab_panel(tab_discovery):
             ui.label("Discovery / Dropbox Links").classes("text-xl font-semibold mb-4")
             discovery_links = details.setdefault("discovery", [])
@@ -167,7 +167,7 @@ def show(case_id: str):
                 url_input = ui.input("Dropbox / URL").classes("flex-1")
                 ui.button("Add Link", on_click=lambda: add_discovery_link(case_id, details, title_input, url_input)).props("color=primary")
 
-        # Case Notes Tab
+        # Case Notes
         with ui.tab_panel(tab_notes):
             ui.label("📝 Case Notes").classes("text-xl font-semibold mb-4")
             notes_editor = ui.textarea(value=details.get("case_notes", "")).classes("w-full h-96")
@@ -177,7 +177,7 @@ def show(case_id: str):
                 ui.button("💾 Save Notes", on_click=lambda: save_all_changes(case_id, details)).props("color=primary")
                 ui.button("📤 Export as Markdown", on_click=lambda: export_notes(case_id, details)).props("color=secondary")
 
-        # Billing Tab
+        # Billing
         with ui.tab_panel(tab_billing):
             ui.label("💰 Billing / Invoice").classes("text-xl font-semibold mb-4")
 
@@ -187,7 +187,6 @@ def show(case_id: str):
 
             billing = details.setdefault("billing", {"service_fees": [], "other_expenses": [], "travel_mileage": []})
 
-            # Service Fees
             ui.label("Service Fees").classes("text-lg font-semibold mt-8")
             service_fees = billing.setdefault("service_fees", [])
             if service_fees:
@@ -208,7 +207,6 @@ def show(case_id: str):
                 sf_rate = ui.number(value=59.0, min=0, step=1.0)
                 ui.button("Add Service Fee", on_click=lambda: add_service_fee(case_id, details, sf_date, sf_activity, sf_hours, sf_rate)).props("color=primary")
 
-            # Other Expenses
             ui.label("Other Expenses").classes("text-lg font-semibold mt-8")
             other_expenses = billing.setdefault("other_expenses", [])
             if other_expenses:
@@ -229,7 +227,6 @@ def show(case_id: str):
                 oe_rate = ui.number(value=0.0, min=0, step=1.0)
                 ui.button("Add Other Expense", on_click=lambda: add_other_expense(case_id, details, oe_date, oe_expense, oe_qty, oe_rate)).props("color=primary")
 
-            # Travel and Mileage
             ui.label("Travel and Mileage").classes("text-lg font-semibold mt-8")
             travel_mileage = billing.setdefault("travel_mileage", [])
             if travel_mileage:
@@ -253,7 +250,7 @@ def show(case_id: str):
             ui.label("Invoice Preview").classes("text-lg font-semibold mt-10 mb-4")
             render_invoice_preview(case_row, billing, details)
 
-        # Case Files Tab
+        # Files
         with ui.tab_panel(tab_files):
             ui.label("📎 Case Files").classes("text-xl font-semibold mb-4")
 
@@ -299,7 +296,6 @@ def show(case_id: str):
             else:
                 ui.label("No files uploaded yet for this case.").classes("italic text-gray-500")
 
-    # Floating save button
     ui.button("💾 Save ALL Changes", on_click=lambda: save_all_changes(case_id, details)).classes("fixed bottom-8 right-8 shadow-xl").props("color=positive fab")
 
 
@@ -311,10 +307,17 @@ def save_all_changes(case_id: str, details: dict):
     ui.notify("✅ All changes saved successfully", type="positive")
     ui.navigate.to(f"/case/{case_id}")
 
-def save_client_info(case_id: str, details: dict):
+def save_client_info(case_id: str, details: dict, name_input, phone_input, email_input, address_input, notes_input):
+    client = details.setdefault("client", {})
+    client["name"] = name_input.value or ""
+    client["phone"] = phone_input.value or ""
+    client["email"] = email_input.value or ""
+    client["address"] = address_input.value or ""
+    client["notes"] = notes_input.value or ""
+    
     sync_details_to_case_row(case_id, details)
     save_case_details(case_id, details)
-    ui.notify("✅ Client information saved", type="positive")
+    ui.notify("✅ Client information saved successfully", type="positive")
     ui.navigate.to(f"/case/{case_id}")
 
 def add_task(case_id: str, details: dict, input_field):
