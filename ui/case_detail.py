@@ -1,13 +1,11 @@
 from nicegui import ui
-from database import get_case_details, save_case_details, get_all_cases
+from database import get_case_details, save_case_details, get_all_cases, save_case
 from ui.components import render_invoice_preview
 from utils.file_handler import save_uploaded_file, delete_file, get_case_folder
 from datetime import datetime, date
 import os
-from pathlib import Path
 
 def create_default_details(case_id: str) -> dict:
-    """Return the exact same default structure your original Streamlit app used."""
     return {
         "client": {"name": "", "phone": "", "email": "", "address": "", "notes": ""},
         "people": [],
@@ -27,15 +25,20 @@ def create_default_details(case_id: str) -> dict:
     }
 
 def get_case_row(case_id: str) -> dict:
-    """Helper to get the basic case row from the cases table."""
     cases = get_all_cases()
     for c in cases:
-        if c.get("case_id") == case_id or c.get("Case_ID") == case_id:
+        if str(c.get("case_id", "")).strip().lower() == str(case_id).strip().lower():
             return c
-    return {"case_id": case_id, "Client": "", "Subject_Target": "", "Case_Type": "", "Status": "Open", "Case_Number": ""}
+    return {
+        "case_id": case_id,
+        "client": "",
+        "subject_target": "",
+        "case_type": "",
+        "status": "Open",
+        "case_number": case_id
+    }
 
 def show(case_id: str):
-    # Load or create details
     details = get_case_details(case_id)
     if not details:
         details = create_default_details(case_id)
@@ -43,17 +46,17 @@ def show(case_id: str):
 
     case_row = get_case_row(case_id)
 
-    # ====================== HEADER ======================
+    # Header
     with ui.row().classes("w-full items-center justify-between p-4 border-b"):
         ui.button("← Back to All Cases", on_click=lambda: __import__("ui.case_list").show()).props("flat color=primary")
         ui.label(f"Case File: {case_id}").classes("text-3xl font-bold text-[#1a3c6e]")
-        ui.label(f"{case_row.get('Client', '')} • {case_row.get('Subject_Target', '')} • {case_row.get('Status', 'Open')}").classes("text-lg text-gray-600")
+        ui.label(f"{case_row.get('client', '')} • {case_row.get('subject_target', '')} • {case_row.get('status', 'Open')}").classes("text-lg text-gray-600")
 
-    # ====================== QUICK ACTIONS ======================
+    # Quick Actions
     with ui.row().classes("gap-4 p-4"):
-        if case_row.get("Status") != "Closed":
-            ui.button("Close Case", on_click=lambda: close_case(case_id)).props("color=negative outline")
-        ui.button("Save ALL Changes", on_click=lambda: save_case_details(case_id, details)).props("color=positive")
+        if case_row.get("status") != "Closed":
+            ui.button("Close Case", on_click=lambda: close_case(case_id, details)).props("color=negative outline")
+        ui.button("💾 Save ALL Changes", on_click=lambda: save_case_details(case_id, details)).props("color=positive")
 
     # ====================== TASKINGS ======================
     ui.label("✅ Taskings").classes("text-2xl font-semibold mt-6 mb-2 px-4")
@@ -62,7 +65,7 @@ def show(case_id: str):
     with ui.column().classes("w-full px-4 gap-2"):
         for i, task in enumerate(taskings):
             with ui.row().classes("w-full items-center"):
-                done = ui.checkbox(task.get("task", ""), value=task.get("done", False)).bind_value(task, "done")
+                ui.checkbox(task.get("task", ""), value=task.get("done", False)).bind_value(task, "done")
                 ui.button("🗑️", on_click=lambda idx=i: delete_task(case_id, details, idx)).props("flat icon=delete color=negative size=sm")
 
         with ui.row().classes("w-full gap-2 mt-4"):
@@ -101,10 +104,10 @@ def show(case_id: str):
         ui.table(rows=people, columns=columns, row_key="name").classes("w-full").props("dense flat")
 
     with ui.row().classes("px-4 mt-4"):
-        ui.button("➕ Add New Person", on_click=lambda: add_person(case_id, details)).props("color=primary")
+        ui.button("➕ Add / Edit Person", on_click=lambda: add_person_dialog(case_id, details)).props("color=primary")
 
     # ====================== TRIAL INFORMATION (conditional) ======================
-    if case_row.get("Case_Type") in ["Trial Support", "OPDS Trial Support"]:
+    if case_row.get("case_type") in ["Trial Support", "OPDS Trial Support"]:
         ui.label("⚖️ Trial Information").classes("text-2xl font-semibold mt-8 mb-2 px-4")
         trial = details.setdefault("trial_info", {"case_number": "", "court_dates": []})
 
@@ -113,7 +116,6 @@ def show(case_id: str):
 
         ui.label("Court Appearances").classes("px-4 mt-4")
         court_dates = trial.setdefault("court_dates", [])
-
         if court_dates:
             court_columns = [
                 {"name": "reason", "label": "Reason", "field": "reason"},
@@ -138,19 +140,19 @@ def show(case_id: str):
         tab_files = ui.tab("📎 Case Files")
 
     with ui.tab_panels().classes("w-full"):
-        # ====================== DISCOVERY TAB ======================
+        # DISCOVERY TAB
         with ui.tab_panel(tab_discovery):
             ui.label("Discovery / Dropbox Links").classes("text-xl font-semibold mb-4")
             discovery_links = details.setdefault("discovery", [])
             for link in discovery_links:
-                ui.link(link.get("title", "Link"), link.get("url", "")).classes("block")
+                ui.link(link.get("title", "Link"), link.get("url", "")).classes("block text-blue-600 hover:underline")
 
             with ui.row().classes("w-full gap-4 mt-6"):
                 title_input = ui.input("Link Title").classes("flex-1")
                 url_input = ui.input("Dropbox / URL").classes("flex-1")
                 ui.button("Add Link", on_click=lambda: add_discovery_link(case_id, details, title_input, url_input)).props("color=primary")
 
-        # ====================== CASE NOTES TAB ======================
+        # CASE NOTES TAB
         with ui.tab_panel(tab_notes):
             ui.label("📝 Case Notes").classes("text-xl font-semibold mb-4")
             notes_editor = ui.textarea(value=details.get("case_notes", "")).classes("w-full h-96")
@@ -160,13 +162,13 @@ def show(case_id: str):
                 ui.button("💾 Save Notes", on_click=lambda: save_case_details(case_id, details)).props("color=primary")
                 ui.button("📤 Export as Markdown", on_click=lambda: export_notes(case_id, details)).props("color=secondary")
 
-        # ====================== BILLING TAB ======================
+        # BILLING TAB
         with ui.tab_panel(tab_billing):
             ui.label("💰 Billing / Invoice").classes("text-xl font-semibold mb-4")
 
             with ui.row().classes("gap-8"):
-                details["invoice_number"] = ui.input("Invoice #", value=details.get("invoice_number", "")).classes("w-48").bind_value_to(details, "invoice_number").value
-                details["invoice_period"] = ui.input("Invoice Period (e.g. 12/15/2025 - 03/04/2026)", value=details.get("invoice_period", "")).classes("flex-1").bind_value_to(details, "invoice_period").value
+                ui.input("Invoice #", value=details.get("invoice_number", "")).bind_value_to(details, "invoice_number").classes("w-48")
+                ui.input("Invoice Period (e.g. 12/15/2025 - 03/04/2026)", value=details.get("invoice_period", "")).bind_value_to(details, "invoice_period").classes("flex-1")
 
             billing = details.setdefault("billing", {"service_fees": [], "other_expenses": [], "travel_mileage": []})
 
@@ -174,16 +176,13 @@ def show(case_id: str):
             ui.label("Service Fees").classes("text-lg font-semibold mt-8")
             service_fees = billing.setdefault("service_fees", [])
             if service_fees:
-                ui.table(
-                    rows=service_fees,
-                    columns=[
-                        {"name": "Date", "label": "Date", "field": "Date"},
-                        {"name": "Quantity/Activity", "label": "Quantity/Activity", "field": "Quantity/Activity"},
-                        {"name": "Hours", "label": "Hours", "field": "Hours"},
-                        {"name": "Rate", "label": "Rate", "field": "Rate"},
-                        {"name": "Amount", "label": "Amount", "field": "Amount"}
-                    ]
-                ).classes("w-full")
+                ui.table(rows=service_fees, columns=[
+                    {"name": "Date", "label": "Date", "field": "Date"},
+                    {"name": "Quantity/Activity", "label": "Quantity/Activity", "field": "Quantity/Activity"},
+                    {"name": "Hours", "label": "Hours", "field": "Hours"},
+                    {"name": "Rate", "label": "Rate", "field": "Rate"},
+                    {"name": "Amount", "label": "Amount", "field": "Amount"}
+                ]).classes("w-full")
             else:
                 ui.label("No service fees added yet.").classes("italic text-gray-500")
 
@@ -198,7 +197,13 @@ def show(case_id: str):
             ui.label("Other Expenses").classes("text-lg font-semibold mt-8")
             other_expenses = billing.setdefault("other_expenses", [])
             if other_expenses:
-                ui.table(rows=other_expenses, columns=[{"name": "Date", "label": "Date", "field": "Date"}, {"name": "Expense", "label": "Expense", "field": "Expense"}, {"name": "QTY", "label": "QTY", "field": "QTY"}, {"name": "Rate", "label": "Rate", "field": "Rate"}, {"name": "Amount", "label": "Amount", "field": "Amount"}]).classes("w-full")
+                ui.table(rows=other_expenses, columns=[
+                    {"name": "Date", "label": "Date", "field": "Date"},
+                    {"name": "Expense", "label": "Expense", "field": "Expense"},
+                    {"name": "QTY", "label": "QTY", "field": "QTY"},
+                    {"name": "Rate", "label": "Rate", "field": "Rate"},
+                    {"name": "Amount", "label": "Amount", "field": "Amount"}
+                ]).classes("w-full")
             else:
                 ui.label("No other expenses added yet.").classes("italic text-gray-500")
 
@@ -213,7 +218,13 @@ def show(case_id: str):
             ui.label("Travel and Mileage").classes("text-lg font-semibold mt-8")
             travel_mileage = billing.setdefault("travel_mileage", [])
             if travel_mileage:
-                ui.table(rows=travel_mileage, columns=[{"name": "Date", "label": "Date", "field": "Date"}, {"name": "Expense", "label": "Expense", "field": "Expense"}, {"name": "QTY", "label": "QTY", "field": "QTY"}, {"name": "Rate", "label": "Rate", "field": "Rate"}, {"name": "Amount", "label": "Amount", "field": "Amount"}]).classes("w-full")
+                ui.table(rows=travel_mileage, columns=[
+                    {"name": "Date", "label": "Date", "field": "Date"},
+                    {"name": "Expense", "label": "Expense", "field": "Expense"},
+                    {"name": "QTY", "label": "QTY", "field": "QTY"},
+                    {"name": "Rate", "label": "Rate", "field": "Rate"},
+                    {"name": "Amount", "label": "Amount", "field": "Amount"}
+                ]).classes("w-full")
             else:
                 ui.label("No travel/mileage added yet.").classes("italic text-gray-500")
 
@@ -224,42 +235,40 @@ def show(case_id: str):
                 tm_rate = ui.number(value=0.725, min=0, step=0.001, format="%.3f")
                 ui.button("Add Travel/Mileage", on_click=lambda: add_travel_mileage(case_id, details, tm_date, tm_expense, tm_qty, tm_rate)).props("color=primary")
 
-            # Invoice Preview (exact same HTML you love)
+            # Invoice Preview
             ui.label("Invoice Preview").classes("text-lg font-semibold mt-10 mb-4")
             render_invoice_preview(case_row, billing, details)
 
-        # ====================== CASE FILES TAB ======================
+        # CASE FILES TAB
         with ui.tab_panel(tab_files):
             ui.label("📎 Case Files").classes("text-xl font-semibold mb-4")
 
             file_search = ui.input("🔎 Search files", placeholder="Search by filename or category...").classes("w-full max-w-md")
 
-            # Upload section
             with ui.row().classes("items-end gap-4 mt-6"):
                 category_select = ui.select(
                     ["Witness Statement", "Police Report", "Timeline", "Background", "Court Doc", "Other"],
-                    label="Category",
-                    value="Other"
+                    label="Category", value="Other"
                 ).classes("w-64")
                 uploaded_files = ui.upload(multiple=True, label="Choose files (documents, videos, audio, images)", auto_upload=True).classes("flex-1")
                 uploaded_files.on("uploaded", lambda e: handle_file_upload(case_id, details, category_select.value, e))
 
-            # Display files
             files = details.setdefault("files", [])
             filtered_files = files
             if file_search.value:
-                filtered_files = [f for f in files if file_search.value.lower() in f["filename"].lower() or file_search.value.lower() in f["category"].lower()]
+                search_term = file_search.value.lower()
+                filtered_files = [f for f in files if search_term in f.get("filename", "").lower() or search_term in f.get("category", "").lower()]
 
             if filtered_files:
                 with ui.grid(columns=3).classes("w-full gap-6 mt-8"):
                     for idx, file_info in enumerate(filtered_files):
                         with ui.card().classes("p-4 hover:shadow-xl transition-shadow"):
-                            ui.label(file_info["filename"]).classes("font-semibold")
-                            ui.label(file_info["category"]).classes("text-sm text-gray-500")
-                            ui.label(f"Uploaded: {file_info['upload_date']} • {file_info['size']}").classes("text-xs text-gray-400")
+                            ui.label(file_info.get("filename", "")).classes("font-semibold")
+                            ui.label(file_info.get("category", "")).classes("text-sm text-gray-500")
+                            ui.label(f"Uploaded: {file_info.get('upload_date', '')} • {file_info.get('size', '')}").classes("text-xs text-gray-400")
 
-                            file_path = file_info.get("path")
-                            ext = file_info["filename"].lower().split(".")[-1] if "." in file_info["filename"] else ""
+                            file_path = file_info.get("path", "")
+                            ext = file_info.get("filename", "").lower().split(".")[-1] if "." in file_info.get("filename", "") else ""
 
                             if ext in ["jpg", "jpeg", "png"]:
                                 ui.image(file_path).classes("w-full mt-4")
@@ -271,15 +280,16 @@ def show(case_id: str):
                                 ui.label("📄 Preview not available").classes("italic text-gray-500 mt-4")
 
                             with ui.row().classes("w-full justify-between mt-4"):
-                                ui.button("Download", on_click=lambda fp=file_path, fn=file_info["filename"]: download_file(fp, fn)).props("flat")
+                                ui.button("Download", on_click=lambda fp=file_path, fn=file_info.get("filename", ""): download_file(fp, fn)).props("flat")
                                 ui.button("🗑️ Delete", on_click=lambda idx=idx: delete_case_file(case_id, details, idx)).props("flat color=negative")
             else:
                 ui.label("No files uploaded yet for this case.").classes("italic text-gray-500")
 
-    # Final save button at bottom of page
+    # Floating save button
     ui.button("💾 Save ALL Changes", on_click=lambda: save_case_details(case_id, details)).classes("fixed bottom-8 right-8 shadow-xl").props("color=positive fab")
 
-# ====================== HELPER FUNCTIONS (all inside the file so everything is self-contained) ======================
+
+# ====================== HELPER FUNCTIONS ======================
 
 def add_task(case_id: str, details: dict, input_field):
     if input_field.value and input_field.value.strip():
@@ -287,7 +297,7 @@ def add_task(case_id: str, details: dict, input_field):
         save_case_details(case_id, details)
         ui.notify("Task added!", type="positive")
         input_field.value = ""
-        ui.navigate.to(f"/case/{case_id}")  # refresh view
+        ui.navigate.to(f"/case/{case_id}")
 
 def delete_task(case_id: str, details: dict, index: int):
     if 0 <= index < len(details["taskings"]):
@@ -296,11 +306,37 @@ def delete_task(case_id: str, details: dict, index: int):
         ui.notify("Task deleted", type="negative")
         ui.navigate.to(f"/case/{case_id}")
 
-def add_person(case_id: str, details: dict):
-    details["people"].append({"role": "Witness", "name": "", "dob": "", "phone": "", "address": "", "vehicle": "", "notes": ""})
-    save_case_details(case_id, details)
-    ui.notify("New person added", type="positive")
-    ui.navigate.to(f"/case/{case_id}")
+def add_person_dialog(case_id: str, details: dict):
+    with ui.dialog() as dialog, ui.card().classes("w-full max-w-2xl p-8"):
+        ui.label("Add / Edit Person").classes("text-2xl font-bold mb-6")
+        role = ui.select(["Witness", "Victim", "Subject", "Other"], value="Witness").classes("w-full mb-2")
+        name = ui.input("Name *").classes("w-full mb-2")
+        dob = ui.input("DOB").classes("w-full mb-2")
+        phone = ui.input("Phone").classes("w-full mb-2")
+        address = ui.input("Address").classes("w-full mb-2")
+        vehicle = ui.input("Vehicle(s)").classes("w-full mb-2")
+        notes = ui.textarea("Notes").classes("w-full")
+
+        def do_add():
+            if not name.value.strip():
+                ui.notify("Name is required", type="negative")
+                return
+            details["people"].append({
+                "role": role.value,
+                "name": name.value.strip(),
+                "dob": dob.value,
+                "phone": phone.value,
+                "address": address.value,
+                "vehicle": vehicle.value,
+                "notes": notes.value
+            })
+            save_case_details(case_id, details)
+            ui.notify("Person added", type="positive")
+            dialog.close()
+            ui.navigate.to(f"/case/{case_id}")
+
+        ui.button("Add Person", on_click=do_add).props("color=primary").classes("w-full mt-4")
+    dialog.open()
 
 def add_court_date(case_id: str, details: dict, reason_input, date_input, time_input, location_input):
     if reason_input.value:
@@ -312,4 +348,100 @@ def add_court_date(case_id: str, details: dict, reason_input, date_input, time_i
         })
         save_case_details(case_id, details)
         ui.notify("Court date added!", type="positive")
-        reason_input.value =
+        ui.navigate.to(f"/case/{case_id}")
+
+def add_discovery_link(case_id: str, details: dict, title_input, url_input):
+    if url_input.value and url_input.value.strip():
+        details["discovery"].append({
+            "title": title_input.value or "Dropbox Link",
+            "url": url_input.value.strip()
+        })
+        save_case_details(case_id, details)
+        ui.notify("Link added", type="positive")
+        ui.navigate.to(f"/case/{case_id}")
+
+def add_service_fee(case_id: str, details: dict, sf_date, sf_activity, sf_hours, sf_rate):
+    hours = float(sf_hours.value or 0)
+    rate = float(sf_rate.value or 0)
+    amount = round(hours * rate, 2)
+    details["billing"]["service_fees"].append({
+        "Date": str(sf_date.value),
+        "Quantity/Activity": sf_activity.value or "",
+        "Hours": hours,
+        "Rate": rate,
+        "Amount": amount
+    })
+    save_case_details(case_id, details)
+    ui.notify("Service fee added", type="positive")
+    ui.navigate.to(f"/case/{case_id}")
+
+def add_other_expense(case_id: str, details: dict, oe_date, oe_expense, oe_qty, oe_rate):
+    qty = float(oe_qty.value or 0)
+    rate = float(oe_rate.value or 0)
+    amount = round(qty * rate, 2)
+    details["billing"]["other_expenses"].append({
+        "Date": str(oe_date.value),
+        "Expense": oe_expense.value or "",
+        "QTY": qty,
+        "Rate": rate,
+        "Amount": amount
+    })
+    save_case_details(case_id, details)
+    ui.notify("Expense added", type="positive")
+    ui.navigate.to(f"/case/{case_id}")
+
+def add_travel_mileage(case_id: str, details: dict, tm_date, tm_expense, tm_qty, tm_rate):
+    qty = float(tm_qty.value or 0)
+    rate = float(tm_rate.value or 0)
+    amount = round(qty * rate, 2)
+    details["billing"]["travel_mileage"].append({
+        "Date": str(tm_date.value),
+        "Expense": tm_expense.value or "",
+        "QTY": qty,
+        "Rate": rate,
+        "Amount": amount
+    })
+    save_case_details(case_id, details)
+    ui.notify("Travel/Mileage added", type="positive")
+    ui.navigate.to(f"/case/{case_id}")
+
+def handle_file_upload(case_id: str, details: dict, category: str, event):
+    if hasattr(event, 'files') and event.files:
+        for uploaded_file in event.files:
+            file_info = save_uploaded_file(case_id, uploaded_file, category)
+            details["files"].append(file_info)
+        save_case_details(case_id, details)
+        ui.notify(f"{len(event.files)} file(s) uploaded", type="positive")
+        ui.navigate.to(f"/case/{case_id}")
+
+def delete_case_file(case_id: str, details: dict, index: int):
+    if 0 <= index < len(details["files"]):
+        file_info = details["files"][index]
+        if file_info.get("path"):
+            delete_file(file_info["path"])
+        del details["files"][index]
+        save_case_details(case_id, details)
+        ui.notify("File deleted", type="negative")
+        ui.navigate.to(f"/case/{case_id}")
+
+def download_file(file_path: str, filename: str):
+    if os.path.exists(file_path):
+        ui.download(file_path, filename)
+    else:
+        ui.notify("File not found", type="negative")
+
+def export_notes(case_id: str, details: dict):
+    notes = details.get("case_notes", "")
+    filename = f"case_{case_id}_notes.md"
+    ui.download(notes.encode("utf-8"), filename)
+    ui.notify("Notes exported", type="positive")
+
+def close_case(case_id: str, details: dict):
+    # Update status in the main cases table
+    case_row = get_case_row(case_id)
+    case_row["status"] = "Closed"
+    save_case(case_row)  # This will INSERT OR REPLACE
+    ui.notify(f"Case {case_id} closed and archived", type="positive")
+    ui.navigate.to("/")
+
+# This file is now complete and ready to run.
