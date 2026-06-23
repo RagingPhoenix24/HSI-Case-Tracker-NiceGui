@@ -31,6 +31,7 @@ def get_case_row(case_id: str) -> dict:
            str(c.get("Case_ID", "")).strip().lower() == str(case_id).strip().lower():
             return c
     return {
+        "Case_ID": case_id,
         "case_id": case_id,
         "client": "",
         "subject_target": "",
@@ -39,18 +40,25 @@ def get_case_row(case_id: str) -> dict:
         "case_number": case_id
     }
 
+def ensure_case_id_key(case_row: dict, case_id: str):
+    """Ensure both keys exist for compatibility"""
+    case_row.setdefault("Case_ID", case_id)
+    case_row.setdefault("case_id", case_id)
+
 def sync_case_row_to_details(case_row: dict, details: dict):
     client = details.setdefault("client", {})
     client["name"] = case_row.get("client") or case_row.get("Client", client.get("name", ""))
 
 def sync_details_to_case_row(case_id: str, details: dict):
     case_row = get_case_row(case_id)
+    ensure_case_id_key(case_row, case_id)
+    
     client = details.get("client", {})
     new_name = client.get("name", "").strip()
     if new_name:
         case_row["client"] = new_name
         case_row["Client"] = new_name
-        save_case(case_row)
+    save_case(case_row)
 
 def show(case_id: str):
     details = get_case_details(case_id)
@@ -90,7 +98,7 @@ def show(case_id: str):
             new_task_input = ui.input("New Task").classes("flex-1")
             ui.button("Add Task", on_click=lambda: add_task(case_id, details, new_task_input)).props("color=primary")
 
-    # Client Information - Explicit inputs + forced value capture
+    # Client Information
     ui.label("👤 Client Information").classes("text-2xl font-semibold mt-8 mb-2 px-4")
     client = details.setdefault("client", {"name": "", "phone": "", "email": "", "address": "", "notes": ""})
 
