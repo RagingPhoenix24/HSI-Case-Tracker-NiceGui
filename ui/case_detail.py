@@ -90,7 +90,7 @@ def show(case_id: str):
             new_task_input = ui.input("New Task").classes("flex-1")
             ui.button("Add Task", on_click=lambda: add_task(case_id, details, new_task_input)).props("color=primary")
 
-    # Client Information - Explicit inputs for reliable save
+    # Client Information - Explicit inputs + forced value capture
     ui.label("👤 Client Information").classes("text-2xl font-semibold mt-8 mb-2 px-4")
     client = details.setdefault("client", {"name": "", "phone": "", "email": "", "address": "", "notes": ""})
 
@@ -124,7 +124,7 @@ def show(case_id: str):
     with ui.row().classes("px-4 mt-4"):
         ui.button("➕ Add / Edit Person", on_click=lambda: add_person_dialog(case_id, details)).props("color=primary")
 
-    # Trial Information (no redundant Case Number)
+    # Trial Information
     if (case_row.get("case_type") or case_row.get("Case_Type", "")) in ["Trial Support", "OPDS Trial Support"]:
         ui.label("⚖️ Trial Information").classes("text-2xl font-semibold mt-8 mb-2 px-4")
         trial = details.setdefault("trial_info", {"court_dates": []})
@@ -155,7 +155,6 @@ def show(case_id: str):
         tab_files = ui.tab("📎 Case Files")
 
     with ui.tab_panels().classes("w-full"):
-        # Discovery
         with ui.tab_panel(tab_discovery):
             ui.label("Discovery / Dropbox Links").classes("text-xl font-semibold mb-4")
             discovery_links = details.setdefault("discovery", [])
@@ -167,7 +166,6 @@ def show(case_id: str):
                 url_input = ui.input("Dropbox / URL").classes("flex-1")
                 ui.button("Add Link", on_click=lambda: add_discovery_link(case_id, details, title_input, url_input)).props("color=primary")
 
-        # Case Notes
         with ui.tab_panel(tab_notes):
             ui.label("📝 Case Notes").classes("text-xl font-semibold mb-4")
             notes_editor = ui.textarea(value=details.get("case_notes", "")).classes("w-full h-96")
@@ -177,7 +175,6 @@ def show(case_id: str):
                 ui.button("💾 Save Notes", on_click=lambda: save_all_changes(case_id, details)).props("color=primary")
                 ui.button("📤 Export as Markdown", on_click=lambda: export_notes(case_id, details)).props("color=secondary")
 
-        # Billing
         with ui.tab_panel(tab_billing):
             ui.label("💰 Billing / Invoice").classes("text-xl font-semibold mb-4")
 
@@ -250,7 +247,6 @@ def show(case_id: str):
             ui.label("Invoice Preview").classes("text-lg font-semibold mt-10 mb-4")
             render_invoice_preview(case_row, billing, details)
 
-        # Files
         with ui.tab_panel(tab_files):
             ui.label("📎 Case Files").classes("text-xl font-semibold mb-4")
 
@@ -296,6 +292,7 @@ def show(case_id: str):
             else:
                 ui.label("No files uploaded yet for this case.").classes("italic text-gray-500")
 
+    # Floating save button
     ui.button("💾 Save ALL Changes", on_click=lambda: save_all_changes(case_id, details)).classes("fixed bottom-8 right-8 shadow-xl").props("color=positive fab")
 
 
