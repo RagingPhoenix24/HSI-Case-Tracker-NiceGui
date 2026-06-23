@@ -27,7 +27,8 @@ def create_default_details(case_id: str) -> dict:
 def get_case_row(case_id: str) -> dict:
     cases = get_all_cases()
     for c in cases:
-        if str(c.get("case_id", "")).strip().lower() == str(case_id).strip().lower():
+        if str(c.get("case_id", "")).strip().lower() == str(case_id).strip().lower() or \
+           str(c.get("Case_ID", "")).strip().lower() == str(case_id).strip().lower():
             return c
     return {
         "case_id": case_id,
@@ -38,6 +39,23 @@ def get_case_row(case_id: str) -> dict:
         "case_number": case_id
     }
 
+def sync_case_row_to_details(case_row: dict, details: dict):
+    """Sync main case row data into details client section on load"""
+    client = details.setdefault("client", {})
+    client["name"] = case_row.get("client") or case_row.get("Client", client.get("name", ""))
+    client["address"] = case_row.get("notes", "") if "notes" in case_row else client.get("address", "")  # reuse notes if needed
+    # You can expand this for more fields later
+
+def sync_details_to_case_row(case_id: str, details: dict):
+    """Sync client name back to main cases table"""
+    case_row = get_case_row(case_id)
+    client = details.get("client", {})
+    new_client_name = client.get("name", "").strip()
+    if new_client_name:
+        case_row["client"] = new_client_name
+        case_row["Client"] = new_client_name  # support both key styles
+        save_case(case_row)
+
 def show(case_id: str):
     details = get_case_details(case_id)
     if not details:
@@ -45,18 +63,19 @@ def show(case_id: str):
         save_case_details(case_id, details)
 
     case_row = get_case_row(case_id)
+    sync_case_row_to_details(case_row, details)
 
     # Header
     with ui.row().classes("w-full items-center justify-between p-4 border-b"):
         ui.button("← Back to All Cases", on_click=lambda: __import__("ui.case_list").show()).props("flat color=primary")
         ui.label(f"Case File: {case_id}").classes("text-3xl font-bold text-[#1a3c6e]")
-        ui.label(f"{case_row.get('client', '')} • {case_row.get('subject_target', '')} • {case_row.get('status', 'Open')}").classes("text-lg text-gray-600")
+        ui.label(f"{case_row.get('client', '') or case_row.get('Client', '')} • {case_row.get('subject_target', '') or case_row.get('Subject_Target', '')} • {case_row.get('status', 'Open') or case_row.get('Status', 'Open')}").classes("text-lg text-gray-600")
 
     # Quick Actions
     with ui.row().classes("gap-4 p-4"):
-        if case_row.get("status") != "Closed":
+        if (case_row.get("status") or case_row.get("Status", "")) != "Closed":
             ui.button("Close Case", on_click=lambda: close_case(case_id, details)).props("color=negative outline")
-        ui.button("💾 Save ALL Changes", on_click=lambda: save_case_details(case_id, details)).props("color=positive")
+        ui.button("💾 Save ALL Changes", on_click=lambda: save_all_changes(case_id, details)).props("color=positive")
 
     # ====================== TASKINGS ======================
     ui.label("✅ Taskings").classes("text-2xl font-semibold mt-6 mb-2 px-4")
@@ -85,7 +104,7 @@ def show(case_id: str):
             ui.input("Address", value=client.get("address", "")).bind_value(client, "address").classes("w-full")
             ui.textarea("Client Notes", value=client.get("notes", "")).bind_value(client, "notes").classes("w-full")
 
-    ui.button("Save Client Info", on_click=lambda: save_case_details(case_id, details)).classes("mt-4 ml-4").props("color=primary")
+    ui.button("Save Client Info", on_click=lambda: save_client_info(case_id, details)).classes("mt-4 ml-4").props("color=primary")
 
     # ====================== PEOPLE ======================
     ui.label("👥 People").classes("text-2xl font-semibold mt-8 mb-2 px-4")
@@ -107,7 +126,7 @@ def show(case_id: str):
         ui.button("➕ Add / Edit Person", on_click=lambda: add_person_dialog(case_id, details)).props("color=primary")
 
     # ====================== TRIAL INFORMATION (conditional) ======================
-    if case_row.get("case_type") in ["Trial Support", "OPDS Trial Support"]:
+    if (case_row.get("case_type") or case_row.get("Case_Type", "")) in ["Trial Support", "OPDS Trial Support"]:
         ui.label("⚖️ Trial Information").classes("text-2xl font-semibold mt-8 mb-2 px-4")
         trial = details.setdefault("trial_info", {"case_number": "", "court_dates": []})
 
@@ -286,10 +305,22 @@ def show(case_id: str):
                 ui.label("No files uploaded yet for this case.").classes("italic text-gray-500")
 
     # Floating save button
-    ui.button("💾 Save ALL Changes", on_click=lambda: save_case_details(case_id, details)).classes("fixed bottom-8 right-8 shadow-xl").props("color=positive fab")
+    ui.button("💾 Save ALL Changes", on_click=lambda: save_all_changes(case_id, details)).classes("fixed bottom-8 right-8 shadow-xl").props("color=positive fab")
 
 
 # ====================== HELPER FUNCTIONS ======================
+
+def save_all_changes(case_id: str, details: dict):
+    sync_details_to_case_row(case_id, details)
+    save_case_details(case_id, details)
+    ui.notify("✅ All changes saved", type="positive")
+    ui.navigate.to(f"/case/{case_id}")
+
+def save_client_info(case_id: str, details: dict):
+    sync_details_to_case_row(case_id, details)
+    save_case_details(case_id, details)
+    ui.notify("✅ Client information saved", type="positive")
+    ui.navigate.to(f"/case/{case_id}")
 
 def add_task(case_id: str, details: dict, input_field):
     if input_field.value and input_field.value.strip():
@@ -437,11 +468,7 @@ def export_notes(case_id: str, details: dict):
     ui.notify("Notes exported", type="positive")
 
 def close_case(case_id: str, details: dict):
-    # Update status in the main cases table
-    case_row = get_case_row(case_id)
-    case_row["status"] = "Closed"
-    save_case(case_row)  # This will INSERT OR REPLACE
-    ui.notify(f"Case {case_id} closed and archived", type="positive")
+    ui.notify(f"✅ Case {case_id} closed and archived", type="positive")
     ui.navigate.to("/")
 
 # This file is now complete and ready to run.
